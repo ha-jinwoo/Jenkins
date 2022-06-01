@@ -8,6 +8,15 @@ group = 'com.example'
 version = '0.0.1-SNAPSHOT'
 sourceCompatibility = '11'
 
+/**
+ * 빌드 시 생성되는 plain.jar 생성 안되게 변경
+ * */
+
+jar{
+	enabled = false
+	archiveClassifier = ''
+}
+
 repositories {
 	mavenCentral()
 }
