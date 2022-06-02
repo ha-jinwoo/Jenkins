@@ -33,4 +33,9 @@ public class HelloController {
     public String hello6() {
         return "Hello6";
     }
+
+    @GetMapping("/hello7")
+    public String hello7() {
+        return "Hello7";
+    }
 }
