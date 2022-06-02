@@ -21,5 +21,4 @@ public class ProfileController {
         String defaultsProfile = profiles.isEmpty()? "default" : profiles.get(0);
         return profiles.stream().filter(realProfiles::contains).findAny().orElse(defaultsProfile);
     }
-
 }
