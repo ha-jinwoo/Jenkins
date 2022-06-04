@@ -293,6 +293,216 @@ build now를 누르고 성공 확인!
 
 ![](https://velog.velcdn.com/images/gkwlsdn95/post/da56e21f-3a11-407d-bead-a00ae1fc9d65/image.png)
 
+### 무중단 배포 환경
+
+서버 디렉토리 구조
+![](https://velog.velcdn.com/images/gkwlsdn95/post/f4026c54-8503-4082-a9ed-3b0d9b222746/image.png)
+
+#### deploy.sh
+```
+SCRIPT_DIR=/home/ec2-user/scripts
+PROJECT_NAME=demo
+
+$SCRIPT_DIR/stop.sh | sudo tee -a /home/ec2-user/deploy.out
+$SCRIPT_DIR/start.sh | sudo tee -a /home/ec2-user/deploy.out
+$SCRIPT_DIR/health.sh | sudo tee -a /home/ec2-user/deploy.out
+```
+
+#### deploy.out
+![](https://velog.velcdn.com/images/gkwlsdn95/post/ce7b7efc-80b0-46e9-8172-27e781594f58/image.png)
+
+
+#### nohup.out
+![](https://velog.velcdn.com/images/gkwlsdn95/post/c56960f3-a272-4863-a255-b0e77df17a4a/image.png)
+
+#### health.sh
+```
+#!/usr/bin/env bash
+ABSPATH=$(readlink -f $0)
+ABSDIR=$(dirname $ABSPATH)
+source ${ABSDIR}/profile.sh
+source ${ABSDIR}/switch.sh
+
+IDLE_PORT=$(find_idle_port)
+
+echo "> Health Check Start!"
+echo "> IDLE PORT: $IDLE_PORT"
+echo "> curl -s http://localhost:$IDLE_PORT/profile"
+
+REPOSITORY=/home/ec2-user
+MV_JAR_NAME_1=$(ls -tr $REPOSITORY/*.jar | tail -n 2 | head -n 1)
+
+echo "> Previous Version"
+echo "  -> $MV_JAR_NAME_1"
+
+for RETRY_COUNT in {1..15}
+do
+    RESPONSE=$(curl -s http://localhost:${IDLE_PORT}/profile)
+    UP_COUNT=$(echo ${RESPONSE} | grep 'real' | wc -l)
+    echo "${UP_COUNT}"
+    if [ ${UP_COUNT} -ge 1 ]
+    then
+        echo "> Health Check 성공"
+        rm -rf $REPOSITORY/pre_version/*
+        mv $MV_JAR_NAME_1 $REPOSITORY/pre_version/
+        switch_proxy
+        break
+    else
+        echo "> Health check의 응답을 알 수 없거나 혹은 실행 상태가 아닙니다."
+        echo "> Health Check: ${RESPONSE}"
+    fi
+
+    if [ ${RETRY_COUNT} -eq 15 ]
+    then
+        echo "> Health check 실패."
+        echo "> 엔진엑스에 연결하지 않고 배포를 종료합니다."
+        exit 1
+    fi
+
+    echo "> Health check 연결 실패. 재시도..."
+    sleep 10
+done
+
+```
+
+#### profile.sh
+```
+#!/usr/bin/env bash
+# 쉬고 있는 profile 찾기
+function find_idle_profile()
+{
+    RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/profile)
+    if [ ${RESPONSE_CODE} -ge 400 ] # 400 보다 크면(40x, 50x)에러
+    then
+        CURRENT_PROFILE=real2
+    else
+        CURRENT_PROFILE=$(curl -s http://localhost/profile)
+    fi
+
+    if [ ${CURRENT_PROFILE} == real1 ]
+    then
+        IDLE_PROFILE=real2
+    else
+        IDLE_PROFILE=real1
+    fi
+    echo "${IDLE_PROFILE}"
+}
+
+# 쉬고 있는 profile의 port찾기
+function find_idle_port()
+{
+    IDLE_PROFILE=$(find_idle_profile)
+    if [ ${IDLE_PROFILE} == real1 ]
+    then
+        echo "8081"
+    else
+        echo "8082"
+    fi
+}
+```
+
+#### start.sh
+```
+#!/usr/bin/env bash
+ABSPATH=$(readlink -f $0)
+ABSDIR=$(dirname $ABSPATH)
+source ${ABSDIR}/profile.sh
+
+REPOSITORY=/home/ec2-user
+
+JAR_NAME=$(ls -tr $REPOSITORY/*.jar | tail -n 1)
+
+echo "> JAR NAME: $JAR_NAME"
+echo "> $JAR_NAME 에 실행 권한 추가"
+chmod +x $JAR_NAME
+
+echo "> $JAR_NAME 실행"
+
+IDLE_PROFILE=$(find_idle_profile)
+echo "> $JAR_NAME을 $IDLE_PROFILE로 실행 합니다."
+
+cp $REPOSITORY/nohup.out $REPOSITORY/pre_log/prelog.out
+rm -f $REPOSITORY/nohup.out
+
+nohup java -jar \
+-Dspring.config.location=classpath:/application.properties,\
+classpath:/application-$IDLE_PROFILE.properties \
+-Dspring.profiles.active=$IDLE_PROFILE \
+$JAR_NAME>$REPOSITORY/nohup.out 2>&1 &
+
+echo "nohup java -jar \
+-Dspring.config.location=classpath:/application.properties,\
+classpath:/application-$IDLE_PROFILE.properties \
+-Dspring.profiles.active=$IDLE_PROFILE \
+$JAR_NAME>$REPOSITORY/nohup.out 2>&1 &"
+```
+
+#### stop.sh
+```
+#!/usr/bin/env bash
+ABSPATH=$(readlink -f $0)
+ABSDIR=$(dirname $ABSPATH)
+source ${ABSDIR}/profile.sh
+
+IDLE_PORT=$(find_idle_port)
+
+echo "> ${IDLE_PORT} 에서 구동중인 어플리케이션 pid 확인"
+IDLE_PID=$(sudo lsof -ti tcp:${IDLE_PORT})
+if [ -z ${IDLE_PID} ]
+then
+    echo "> 현재 구동 중인 어플리케이션이 없으므로 종료하지 않습니다."
+else
+    echo "> kill -15 $IDLE_PID"
+    kill -15 ${IDLE_PID}
+    sleep 10
+fi
+```
+
+#### switch.sh
+```
+#!/usr/bin/env bash
+ABSPATH=$(readlink -f $0)
+ABSDIR=$(dirname $ABSPATH)
+source ${ABSDIR}/profile.sh
+
+function switch_proxy(){
+    IDLE_PORT=$(find_idle_port)
+
+    echo "> 전환할 port: $IDLE_PORT"
+    echo "> Port 전환"
+    echo "set \$service_url http://127.0.0.1:${IDLE_PORT};" | sudo tee /etc/nginx/conf.d/service-url.inc
+
+    echo "> 엔진엑스 Reload"
+    sudo service nginx reload
+    echo "> Realod 완료"
+}
+```
+
+#### test.sh
+
+```
+#!/usr/bin/env bash
+ABSPATH=$(readlink -f $0)
+ABSDIR=$(dirname $ABSPATH)
+source ${ABSDIR}/profile.sh
+
+REPOSITORY=/home/ec2-user
+echo "> curl -s http://localhost:$IDLE_PORT/profile"
+MV_JAR_NAME_1=$(ls -tr $REPOSITORY/*.jar | tail -n 2 | head -n 1)
+echo "$MV_JAR_NAME_1"
+
+JAR_NAME=$(ls -tr $REPOSITORY/*.jar | tail -n 1)
+
+echo "> JAR NAME: $JAR_NAME"
+echo "> $JAR_NAME 에 실행 권한 추가"
+
+# nohup java -jar \
+# -Dspring.config.location=classpath:/application.properties,\
+# classpath:/application-$IDLE_PROFILE.properties \ #, 추가하고 공백제거해야함
+# -Dspring.profiles.active=$IDLE_PROFILE \
+# $JAR_NAME>$REPOSITORY/nohup.out 2>&1 &
+```
+
 참고
 
 1. [[AWS] EC2(Amazon Linux) JAVA 11 설치하기 / ec2 jdk11 설치](https://cloud-oky.tistory.com/3286)
