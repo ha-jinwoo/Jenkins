@@ -509,3 +509,4 @@ echo "> $JAR_NAME 에 실행 권한 추가"
 
 2. [아마존 ec2 무료 티어 메모리 부족 현상](https://okky.kr/article/884329)
 3. [jenkins 설치하기](https://choiiii-dev.tistory.com/13?category=1022112)
+4. [스프링 부트와 aws로 혼자 구현하는 웹서비스](https://github.com/jojoldu/freelec-springboot2-webservice)
