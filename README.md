@@ -1,3 +1,5 @@
+<h2>AWS + 젠킨스 + 스프링 부트 CI/CD 서버를 구축해 보자</h2>
+
 #### 자바 설치
 
 `sudo yum install java-11-amazon-corretto.x86_64`
@@ -293,9 +295,11 @@ build now를 누르고 성공 확인!
 
 ![](https://velog.velcdn.com/images/gkwlsdn95/post/da56e21f-3a11-407d-bead-a00ae1fc9d65/image.png)
 
-### 무중단 배포 환경
+<h2>무중단 배포 환경을 만들어 보자</h2>
 
-서버 디렉토리 구조
+### 배포 환경
+
+디렉토리 구조
 ![](https://velog.velcdn.com/images/gkwlsdn95/post/f4026c54-8503-4082-a9ed-3b0d9b222746/image.png)
 
 #### deploy.sh
