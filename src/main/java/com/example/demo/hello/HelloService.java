@@ -21,7 +21,7 @@ public class HelloService {
 
     @Transactional
     HelloDto findDefault(){
-        HelloEntity entity = helloRepository.findById(1L).get();
+        HelloEntity entity = helloRepository.findHelloEntityByText1("Hello");
         HelloDto dto = HelloDto.builder()
                 .text(entity.getText1())
                 .text2(entity.getText2())
